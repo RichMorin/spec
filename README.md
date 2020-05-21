@@ -5,33 +5,31 @@ Spec is a data validation library for Elixir, inspired by [clojure.spec].
 
 Like `clojure.spec`, this library does not implement a type system
 and the data specifications created with it
-are not useful for checking at compile time.
-For that, use the [@spec typespecs][typespecs] Elixir builtin.
+are not useful for static type checking (e.g., at compile time).
+For that, use Elixir's type specification attributes ([typespecs]).
+See [Dialyxir][dialyxir] and [Dialyzer](dialyzer) for usage details.
 
 Spec calls cannot be used for pattern matching, nor in function head guards, 
 because validating with Spec could involve calling some Elixir runtime functions
 which are not allowed inside a pattern match.
 If you are looking for a way to create composable patterns,
 take a look at [Expat][expat].
-You can, for example, conform your data with Spec
+You can, for example, "conform" (i.e., check, destructure) your data with Spec
 and then pattern match on the conformed value,
 using Expat to easily extract values from it.
 
-Having said that, you can use Spec to validate that your data is of a
-given type,
-has certain structure, or satisfies some predicates.
+Having said that, you can use Spec to validate that your data
+is of a given type, has certain structure, or satisfies some predicates.
 Spec supports all Elixir data types;
 that is, you can match on lists, maps, scalars, structs, and tuples.
-Maps, structs, and keyword lists can be checked for required keys.
+Maps, structs, and keyword lists can be checked for optional or required keys.
 
-Specs can be combined in various ways:
-passed as arguments to other specs,
-logically combined by using the `and`,`or` operators, and finally,
-sequenced or alternated using regex (regular expression) operators.
-You can validate your function arguments or return values
-(it's all done at *run-time*);
+Specs can be combined in various ways: passed as arguments to other specs,
+logically combined with boolean operators (e.g., `and`, `or`, `not`),
+and finally, sequenced or alternated using [regular expression][regex] operators.
+You can validate your function arguments or return values at run-time;
 see the [`RandomJane`](#instrumented-def) example below.
-Finally, you can "exercise" a spec to get sample data that conforms to it.
+Finally, you can "exercise" a spec, generating sample data that conforms to it.
 
 - [Intro](#purpose)
   - [Purpose](#purpose)
@@ -39,17 +37,17 @@ Finally, you can "exercise" a spec to get sample data that conforms to it.
 - [Usage](#usage)
   - [Predicates](#predicates)
   - [Conformers](#conformers)
-  - [Conforming data](#data-structure-specifications)
-    - [Data structure specifications](#data-structure-specifications)
-    - [Alternating specs](#alternating-specs)
-    - [Key specs](#key-specs)
-    - [Regex repetition operators](#regex-repetition-operators)
-  - [Defining reusable specs](#define-specs)
+  - [Conforming Data](#data-structure-specifications)
+    - [Data Structure Specifications](#data-structure-specifications)
+    - [Alternation in Specs](#alternating-specs)
+    - [Specifying Key Usage](#key-specs)
+    - [Regex Repetition Operators](#regex-repetition-operators)
+  - [Defining Reusable Specs](#define-specs)
     - [Defspec](#define-specs)
     - [Parameterized Specs](#parameterized-specs)
-  - [Conforming functions](#function-specifications)
-    - [Function specifications](#function-specifications)
-    - [Define conformed functions](#define-conformed-functions)
+  - [Conforming Functions](#function-specifications)
+    - [Function Specifications](#function-specifications)
+    - [Define Conformed Functions](#define-conformed-functions)
     - [Instrumented def](#instrumented-def)
 - [Things to do](#things-to-do)
 
@@ -57,11 +55,11 @@ Finally, you can "exercise" a spec to get sample data that conforms to it.
 
 Spec's purpose is to provide a library
 for creating composable data structure specifications.
-Once you create an spec, you can match data with it,
+Once you create a spec, you can match data with it,
 get human-readable descriptive messages,
-or programatically generate detailed errors
-if something inside of it does not conform to the specification.
-You can also exercise the spec, obtaining some random (but conformant) data.
+or programatically generate detailed error messages
+if some aspect of the data does not conform to the specification.
+You can also "exercise" the spec, obtaining some random (but conformant) data.
 This can be used, for example, in tests.
 
 Although Spec is heavily inspired by `clojure.spec`,
@@ -98,10 +96,10 @@ Predicates are Elixir's basic tool for validating data.
 A predicate is a function (or macro) that takes some data
 and returns either `true` or `false`.
 For example, `is_number/1` is a builtin predicate
-that will return `true` when invoked like `is_number(42)`.
+that will only return `true` when invoked with a number (e.g., `is_number(42)`).
 
-Predicates can be used as specs by feeding them to `Spec.conform(spec, data)`,
-along with some data to check.
+Predicates are typically used in specs by means of `Spec.conform/2`;
+just hand it a predicate, along with some data to check:
 
 ```elixir
 iex> use Spec
@@ -118,7 +116,7 @@ So, when performing the above validation, Spec will do `24 |> is_number()`.
 
 The return value of a successful `conform/2` call is an `:ok` tagged tuple,
 even though `is_number/1` actually returns a boolean (more on this later).
-The second value of the tuple is the input data value.
+The second value of the tuple is the (possibly "conformed") input data value.
 
 You can use any Elixir or Erlang predicate (with any number of arguments)
 to conform data.
@@ -163,7 +161,7 @@ The `conformed` value does not necessarily need to equal the input `data`.
 For example, the conformer could choose to transform the data
 and return a destructured value. 
 
-### Data structure specifications
+### Data Structure Specifications
 
 Let's go back to conforming data with specifications and see how we can 
 construct them.
@@ -194,7 +192,7 @@ Spec will check that the value actually is a tuple of the same size,
 and that every element in it conforms to the corresponding spec.
 
 Similarly, for list literals,
-the spec `[is_integer()]` is a list containing a single integer value. 
+the spec `[is_integer()]` expects a list containing a single integer value. 
 
 Naturally, the `_` placeholder matches anything.
 So, `[{is_atom(), _}]` could describe a keyword list with a single key:
@@ -221,7 +219,7 @@ iex> conform!(%{is_binary() => is_binary(), is_atom() => is_binary()},
   `44` does not satisfy predicate `is_binary()`
 ```
 
-### Alternating specs
+### Alternation in Specs
 
 Inside a spec, the `and`/`or` operators are allowed.
 For example, as previously shown on the data structure section,
@@ -258,13 +256,20 @@ be created for its conformed value. For example:
 iex> conform!(:hello :: is_binary(), "world")
 {:hello, "world"}
 ```
-*note:* tagged specs use `::` syntax familiar to Elixir [typespecs].
+*note:* The `::` syntax used in tagged specs is taken from Elixir [typespecs].
 
 Tagged specs are the first example we have seen of a conformed value
 that is different from the original data given to the spec.
 In this case, the conformer creates a tagged tuple, wrapping data with a name.
 
-This way, you can set a tag on any spec alternative:
+This means that you can set a tag on any spec alternative,
+though you may need to parenthesize the sub-expressions:
+
+```elixir
+iex> conform((:foo :: is_atom()) or (:bar :: is_number()), 20)
+{:ok, {:bar, 20}}
+```
+For conciseness, tags can be bound to temporary variables:
 
 ```elixir
 iex> a = :foo
@@ -273,7 +278,8 @@ iex> conform((a :: is_atom()) or (b :: is_number()), 20)
 {:ok, {:bar, 20}}
 ```
 
-In addition, using tags inside a list spec creates handy keywords:
+In addition, using tags inside a list spec is a handy way
+to create a keyword list:
 
 ```elixir
 iex> conform!([:a :: is_atom(), :b :: is_number()], [:michael, 23])
@@ -313,7 +319,7 @@ conform(%{
 # => {:ok, %{foo: 1, bar: 2}}
 ```
 
-### Key specs
+### Specifying Key Usage
 
 Key specs let you state which keys are mandatory or optional.
 This works not only on Maps, but also on Keyword lists.
@@ -330,18 +336,21 @@ iex> conform(keys(required: [:a], optional: [:c]), data)
 ```
 
 Note that the conformed data does not include `:b`,
-as it was neither supplied in the `required:`
-nor the `optional:` combinations of keys.
+as it wasn't supplied in either the `required:`
+or the `optional:` list of keys.
 
-Similarly, and just like in Maps, you can match on keys in a Keyword list:
+Similarly, and just like in Maps, you can match on keys in a Keyword list.
+Note that only the first matching alternative will be returned:
 
 ```elixir
-iex> data = [a: 1, c: 0, b: 2, c: 3]
+iex> data = [a: 1, c: 0, b: 2, c: 3, d: 4]
+iex> conform(keys(required: [:c or :d]), data)
+{:ok, [d: 4]}
 iex> conform(keys(required: [:d or :c]), data)
 {:ok, [c: 0, c: 3]}
 ```
 
-The `keys`/2 conformer will fail if a required key combination is missing:
+The `keys/2` conformer will fail if a required key combination is missing:
 
 ```elixir
 iex> data = %{a: 1, c: 3}
@@ -350,6 +359,15 @@ iex> conform!(keys(required: [:d or (:a and :b)]), data)
 ```
 
 ### Regex Repetition Operators
+
+Spec provides several "repetition operators".
+These can be used to form regular expressions which match varying inputs:
+
+- `alt`         - choice among alternative predicates/patterns
+- `cat`         - concatenation of predicates/patterns
+- `many`        - specified number of a predicate/pattern
+- `one_or_more` - 1 or more of a predicate/pattern
+- `zero_or_one` - 0 or 1 of a predicate/pattern
 
 The `cat` and `alt` specs are defined
 in terms of (previously seen) tagged and list specs,
@@ -413,11 +431,12 @@ when enabled, it will conform to a new stream
 which in turn produces the result of conforming every item lazily:
 
 ```elixir
-{:ok, stream} = conform(many(is_number(), as_stream: true), 0..2)
-[{:ok, 0}, {:ok, 1}, {:ok, 2}] = Enum.to_list(stream)
+iex> {:ok, stream} = conform(many(is_number(), as_stream: true), 0..2)
+iex> [{:ok, 0}, {:ok, 1}, {:ok, 2}] = Enum.to_list(stream)
+[ok: 0, ok: 1, ok: 2]
 ```
 
-### Define Specs
+### Defining Reusable Specs
 
 You can also define specs on a module, giving them a name
 and having a easy way to be called and composed.
@@ -430,20 +449,20 @@ defmodule LovePOEM do
   defspec lovers, do: {is_binary(), is_binary()}
   
   def send_love({from, to}) do
-    lovers!({foo, to}) # same as Spec.conform!(lovers(), {from, to})
+    lovers!({from, to}) # same as Spec.conform!(lovers(), {from, to})
   end
 end
 ```
 
 The first advantage of using `defspec` is that it lets you name your specs.
-The second is that you can use several generated functions: 
+The second is that it lets you use any of several generated functions: 
 
 ```elixir
-# The primary generated function takes its data as first argument,
+# The primary generated function takes the data as its first argument,
 # so it's fully pipeable (and reusable in other specs):
 lovers(data) # => {:ok, ...} 
 
-# There's a predicate version of it that returns a boolean:
+# There's also a predicate version that returns a boolean:
 lovers?(data) # => true
 
 # And a bang (!) version that returns the conformed data or raises on error:
@@ -453,7 +472,7 @@ lovers!({22, 33}) # raises *Spec.Mismatch*
 
 For private specs, you can use `defspecp`.
 Note that this will only generate the `lovers?` and `lovers!` private functions
-if you give it an option like: `include: [:pred, :bang]`.
+if you give it an option such as: `include: [:pred, :bang]`.
 
 
 ### Parameterized Specs
@@ -468,48 +487,50 @@ For example, you could define a spec to conform Maps:
 defmodule MapSpec do
   use Spec
 
-  defspec map_of(key_spec, val_spec, options \\ []), 
-  do: is_map() and many({key_spec, val_spec}, options)
-  
+  defspec map_of(key_spec, val_spec, options \\ []) do 
+    is_map() and many({key_spec, val_spec}, options)
+  end
+
 end
 
-# validate that foo is a map of atoms to numbers with size between 2 and three
+# validate that foo is a 2- or 3-element map of atoms to numbers
 foo = %{a: 1, b: 2, c: 3}
 foo |> MapSpec.map_of!(&is_atom/1, &is_number/1, min: 2, max: 3)
 ```
 
-Notice that this time we are using `MapSpec.map_of!/4` which takes the data to
-validate as first argument.
+Notice that this time we are using `MapSpec.map_of!/4`,
+which takes the data to be validated as its first argument.
 Once you define your specs, you can use them directly to conform data.
 
 ### Function Specifications
 
-Function specifications can be created by using `fspec/2`,
-which takes several options.
-The only required option is `args: args_spec`;
-this must be a spec to conform an array of arguments before applying the function. 
+Function specifications, created by `fspec/2`,
+allow you to characterize the expected inputs and return value of a function.
+`fspec/2` takes several options, but the only required option is `args: args_spec`.
+This spec is used to conform an array of arguments before the function is run. 
 
 ```elixir
-data = {&Kernel.+/2, [3, 4]}
-{:ok, 7} = conform(fspec(args: [is_integer(), is_integer()]), data)
+iex> data = {&Kernel.+/2, [3, 4]}
+iex> {:ok, 7} = conform(fspec(args: [is_integer(), is_integer()]), data)
+{:ok, 7}
 ```
 
-As you can see, the `fspec` data *must* be a tuple of the form `{function, arguments}`.
-If all conforms are successful,
-it will conform to the value returned by the function.
+As you can see, the input to `fspec` *must* be a tuple of the form `{function, arguments}`.
+If all of the input conforms are successful,
+the output will conform to the value returned by the function.
 Otherwise, the first `{:error, mismatch}` to occur will be returned.
 
 These are the options that `fspec` can take:
 
 * `args:` - a spec to conform a list of argument values
-* `ret:` - a spec to conform the function return value
-* `fn:` - a spec that takes a Keyword 
+* `ret:`  - a spec to conform the function return value
+* `fn:` - a spec that takes a Keyword list
                 `[args: conformed_args, ret: conformed_ret]`
           If present, this will be used to conform the relation
-          between its arguments and return value.
+          between the function's arguments and return value.
 * `apply:` - nil by default. When given the `:conformed_args` atom, 
            the function will be applied to the *conformed_args*
-           that result from conforming with `args:` spec,
+           that result from conforming with the `args:` spec,
            instead of the original args.
 * `return:` - nil by default. When given the `:conformed_ret` atom,
            the return value will be *conformed_ret*,
@@ -540,7 +561,7 @@ fun = fn a, b -> Range.new(a, b) |> Enum.random end
 {:ok, 12} = RandSpec.rand_range({fun, [10, 20]})
 ```
 
-Remember that bang versions either return a conformed value or raise a mismatch:
+Remember that the bang versions either return a conformed value or raise a Mismatch exception:
 
 ```elixir
 fun = fn a, b -> Range.new(a, b) |> Enum.random end
@@ -548,7 +569,7 @@ fun = fn a, b -> Range.new(a, b) |> Enum.random end
 ```
 
 ```elixir
-# should fail if second arg is lower than first
+# should fail if the second arg is lower than the first
 RandSpec.rand_range!({fun, [10, 5]})
 ** (Spec.Mismatch) `[a: 10, b: 5]` does not satisfy predicate `"#Function<9.33707904/1 in RandSpec.rand_range/0>"`
 ```
@@ -566,7 +587,7 @@ we can learn to use the `@fspec` annotation to automatically instrument function
 That is, they will be conformed when called.
 
 `@fspec` *must* be a function reference to a previously defined spec.
-For example, we can use our `RandSpec.rand_range!/1`
+For example, we can use our `RandSpec.rand_range!/1` function:
 
 ```elixir
 defmodule RandomJoe do
@@ -585,7 +606,7 @@ end
 ```
 
 *Important* we used the bang version when defining `foo/2`
-so that if any spec fails, the mismatch will be raised:
+so that if any spec fails, the Mismatch exception will be raised:
 
 ```elixir
 RandomJoe.foo(1, :a)
@@ -620,7 +641,7 @@ defmodule RandomJane do
 end
 ```
 
-This way the changes in your source code are minimal.
+This way, the changes in your source code are minimal.
 The recommended practice is to create all your specs in a separate module
 and just reference them with `@fspec`.
 
@@ -645,7 +666,10 @@ Here's a short list you can help Spec to be more awesome, Thank you :heart:!
 - [ ] Add typespecs :P
 
 
-[clojure.spec]: https://clojure.org/guides/spec
-[typespecs]: https://hexdocs.pm/elixir/typespecs.html
-[expat]: https://github.com/vic/expat
-[tests]: https://github.com/vic/spec/tree/master/test
+[clojure.spec]:  https://clojure.org/guides/spec
+[dialyxir]:      https://github.com/jeremyjh/dialyxir
+[dialyzer]:      http://erlang.org/doc/man/dialyzer.html
+[expat]:         https://github.com/vic/expat
+[regex]:         https://en.wikipedia.org/wiki/Regular_expression
+[tests]:         https://github.com/vic/spec/tree/master/test
+[typespecs]:     https://hexdocs.pm/elixir/typespecs.html
